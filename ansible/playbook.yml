@@ -1,0 +1,63 @@
+---
+- hosts: all
+  vars_files:
+    - ../build.yml
+  tasks:
+    - name: install ruby build deps
+      apt: pkg={{item}} state=latest update_cache=true 
+      with_items:
+        - ruby
+        - ruby-dev
+        - git-core
+        - build-essential
+        - libsqlite3-dev
+        - libxslt1-dev
+        - libxml2-dev
+        - zlib1g-dev
+        - libssl-dev
+        - libreadline-dev
+        - libncurses5-dev
+        - libyaml-dev
+        - libffi-dev
+        - libgdbm-dev
+      become: yes
+      become_method: sudo
+
+    - name: install fpm
+      gem: name=fpm state=latest user_install=no
+      become: yes
+      become_method: sudo
+
+    - name: get chruby
+      git: repo=https://github.com/postmodern/chruby.git dest=/tmp/chruby
+
+    - name: install chruby
+      become: yes
+      become_method: sudo 
+      shell: make && make install chdir=/tmp/chruby creates=/usr/local/share/chruby/chruby.sh
+
+    - name: create chruby deb
+      shell: chdir=/vagrant/build-output fpm -f -s dir -t deb -n "chruby" -v head --description "Changes the current Ruby"  /usr/local/share/chruby creates=/vagrant/build-output/chruby_head_amd64.deb
+
+    - name: get ruby-install
+      git: repo=https://github.com/postmodern/ruby-install.git dest=/tmp/ruby-install
+
+    - name: install ruby-install
+      become: yes
+      become_method: sudo 
+      shell: make && make install chdir=/tmp/ruby-install creates=/usr/local/bin/ruby-install
+
+    - name: build rubies
+      shell: echo -ne "Installing Ruby VM Type {{ item.0.type }} Version {{ item.1.version }}"; ruby-install {{ item.0.type }} {{ item.1.version }} -i /opt/rubies/{{ item.0.type }}-{{ item.1.version }}
+      become: yes
+      become_method: sudo
+      with_subelements:
+        - rubies
+        - versions
+
+    - name: create debs
+      shell: chdir=/vagrant/build-output fpm -f -s dir -t deb -n "{{ item.0.type }}-{{ item.1.version }}" -v 1 -d 'build-essential' -d 'libffi-dev' -d 'libgdbm-dev' -d 'libncurses5-dev' -d 'libreadline-dev'  -d 'libssl-dev' -d 'libyaml-dev' -d 'zlib1g-dev'  --description "Interpreter of object-oriented scripting language Ruby" /opt/rubies/{{ item.0.type }}-{{ item.1.version }}
+      with_subelements:
+        - rubies
+        - versions
+
